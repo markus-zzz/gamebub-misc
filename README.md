@@ -56,3 +56,15 @@ and at this point 500Hz, 250Hz, 125Hz and 62.5Hz square waves can be observed on
 (Note that the `CTRL-A` key combination, used to exit minicom, also puts the
 MicroPython in `raw REPL mode`. Use `CTRL-B` to bring it back to `normal REPL
 mode`).
+
+### Program FPGA over WiFi
+Alternatively one can also program the FPGA over WiFi. First start the
+programmer server. E.g.
+```
+>>> fpgamisc.program_fpga_wifi('wireless_1', 'top-secret-password')
+```
+Then, from the host, use netcat to to connect to port 1234 of the device and
+download the desired bitstream. E.g.
+```
+nc -N 192.168.2.227 1234 < out/pmod.bit
+```
