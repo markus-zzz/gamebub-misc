@@ -7,7 +7,7 @@ fpga_program_b = machine.Pin(7, machine.Pin.OPEN_DRAIN, value=1)
 fpga_init_b = machine.Pin(8, machine.Pin.IN)
 fpga_spi_cs = machine.Pin(10, machine.Pin.OUT)
 
-def program_fpga(bitstream):
+def fpga_program(bitstream_path):
   print("Powering on FPGA")
   fpga_power.value(1)
   fpga_spi_cs.value(1)
@@ -25,8 +25,8 @@ def program_fpga(bitstream):
     time.sleep_ms(50)
 
   print("FPGA is in program mode.")
-  print("programming:", bitstream)
-  f = open(bitstream, 'rb')
+  print("programming:", bitstream_path)
+  f = open(bitstream_path, 'rb')
   f.read(129) # discard header
 
   chunk_size = 16 * 1024
@@ -47,7 +47,7 @@ def program_fpga(bitstream):
 import network
 import socket
 
-def program_fpga_wifi(ssid, key):
+def wifi_connect(ssid, key):
   sta_if = network.WLAN(network.WLAN.IF_STA)
   if not sta_if.isconnected():
     print('connecting to network...')
@@ -57,6 +57,7 @@ def program_fpga_wifi(ssid, key):
       pass
   print('network config:', sta_if.ipconfig('addr4'))
 
+def fpga_program_server():
   addr = socket.getaddrinfo('0.0.0.0', 1234)[0][-1]
 
   s = socket.socket()

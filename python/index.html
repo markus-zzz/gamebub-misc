@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple HTML with JavaScript</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin-top: 50px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>Welcome to My Page</h1>
+  <p>Click the button below to update the image</p>
+  <button onclick="onClick()">Update</button>
+  <canvas id="canvas"></canvas>
+
+  <script>
+    const width = 320;
+    const height = 200;
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = width;
+    canvas.height = height;
+
+    function updateImage(input) {
+      const arr = new Uint8ClampedArray(width * height * 4);
+      function unpackPixel(pixelIdx, colorIdx) {
+        arr[pixelIdx + 0] = colorIdx * 16; // R value
+        arr[pixelIdx + 1] = colorIdx * 16; // G value
+        arr[pixelIdx + 2] = colorIdx * 16; // B value
+        arr[pixelIdx + 3] = 255; // A value
+      }
+
+      for (let i = 0; i < width * height / 2; i++) {
+        unpackPixel(i * 8 + 0, (input[i] >> 0) & 0xf);
+        unpackPixel(i * 8 + 4, (input[i] >> 4) & 0xf);
+      }
+
+      let imageData = new ImageData(arr, width, height);
+      ctx.putImageData(imageData, 0, 0);
+    }
+
+    function onClick() {
+      fetch('http://localhost:8000/image.bin?v=${Date.now()}') // Append timestamp to avoid getting cached data
+        .then(response => response.arrayBuffer())
+        .then(buffer => {
+          const u8arr = new Uint8Array(buffer);
+          updateImage(u8arr);
+        })
+        .catch(error => console.error('Error:', error));
+    }
+  </script>
+</body>
+</html>

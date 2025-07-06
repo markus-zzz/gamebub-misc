@@ -8,3 +8,14 @@ set_property -dict { PACKAGE_PIN M14    IOSTANDARD LVCMOS33 } [get_ports { pmod[
 set_property -dict { PACKAGE_PIN N14    IOSTANDARD LVCMOS33 } [get_ports { pmod[1] }];
 set_property -dict { PACKAGE_PIN P14    IOSTANDARD LVCMOS33 } [get_ports { pmod[2] }];
 set_property -dict { PACKAGE_PIN M13    IOSTANDARD LVCMOS33 } [get_ports { pmod[3] }];
+
+########################################
+# MCU Communication
+########################################
+set_property -dict { PACKAGE_PIN F4     IOSTANDARD LVCMOS33 } [get_ports { mcu_spi_clk  }];
+set_property -dict { PACKAGE_PIN K1     IOSTANDARD LVCMOS33 } [get_ports { mcu_spi_cs_n }];
+set_property -dict { PACKAGE_PIN J2     IOSTANDARD LVCMOS33 } [get_ports { mcu_spi_d[0] }];
+set_property -dict { PACKAGE_PIN H1     IOSTANDARD LVCMOS33 } [get_ports { mcu_spi_d[1] }];
+set_property -dict { PACKAGE_PIN H2     IOSTANDARD LVCMOS33 } [get_ports { mcu_spi_d[2] }];
+set_property -dict { PACKAGE_PIN K2     IOSTANDARD LVCMOS33 } [get_ports { mcu_spi_d[3] }];
+set_property -dict { PACKAGE_PIN J3     IOSTANDARD LVCMOS33 } [get_ports { mcu_irq_n    }];
