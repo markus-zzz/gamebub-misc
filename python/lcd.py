@@ -50,6 +50,12 @@ class LCD:
         # Display Inversion ON
         self._write_cmd(0x21)
 
+        # Column inversion mode
+        self._write_cmd(0xB4, bytes([0x00]))
+
+        # BYPASS memory, direct to shift register
+        self._write_cmd(0xB6, bytes([0xB2, 0x62]))
+
     def set_pos(self, xs, xe, ys, ye):
         # Column Address Set
         self._write_cmd(0x2A, bytes([xs>>8, xs&0xff, xe>>8, xe&0xff]))

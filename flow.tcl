@@ -14,3 +14,4 @@ write_checkpoint -force $outputDir/post_place.dcp
 route_design
 write_checkpoint -force $outputDir/post_route.dcp
 write_bitstream -force $outputDir/pmod.bit
+quit

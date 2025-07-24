@@ -68,3 +68,28 @@ download the desired bitstream. E.g.
 ```
 nc -N 192.168.2.227 1234 < out/pmod.bit
 ```
+
+### Misc
+
+Generate RGB data for the bouncing image. E.g.
+```
+$ python3 python/rgb-tool.py ~/Downloads/parrot.jpg 128 128 > image.dat
+```
+
+Do this in the Python REPL after boot
+```
+# Turn off status LED as it is too bright
+import machine
+status_led = machine.Pin(36, machine.Pin.OUT)
+status_led.value(0)
+
+# Setup LCD
+import lcd
+lcd = lcd.LCD()
+lcd.setup()
+
+# Connect to WIFI and get ready to program FPGA
+import fpgamisc
+fpgamisc.wifi_connect('network', 'password')
+fpgamisc.fpga_program_server()
+```
