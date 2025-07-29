@@ -93,3 +93,11 @@ import fpgamisc
 fpgamisc.wifi_connect('network', 'password')
 fpgamisc.fpga_program_server()
 ```
+
+## Firmware
+
+```
+$ idf.py set-target esp32s3
+$ idf.py menuconfig
+$ idf.py build flash monitor
+```
