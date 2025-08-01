@@ -97,6 +97,7 @@ void wifi_init_sta(void) {
 
 void lcd_init();
 void fpga_init();
+void start_webserver();
 void fpga_start_program_service();
 
 void app_main(void) {
@@ -134,6 +135,7 @@ void app_main(void) {
   ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
   wifi_init_sta();
   printf("Hello World (markus-zzz-2)!!!\n");
+  start_webserver();
 
   fpga_start_program_service();
 }

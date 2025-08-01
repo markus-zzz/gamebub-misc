@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simple HTML with JavaScript</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin-top: 50px;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>Welcome to My Page</h1>
+  <p>Click the button below to update the image</p>
+  <div>
+    <button onclick="onClickUpdate()">Update</button>
+    <button onclick="onClickZoomAll()">ZoomAll</button>
+    <button onclick="onClickZoomIn()">ZoomIn</button>
+    <button onclick="onClickZoomOut()">ZoomOut</button>
+  </div>
+  <canvas id="canvas"></canvas>
+
+  <script>
+
+    const width = 1024;
+    const height = 480;
+
+    class ValueChange {
+      constructor(time, value) {
+        this.time = time;
+        this.value = value;
+      }
+      getTime() {
+        return this.time;
+      }
+      getValue() {
+        return this.value;
+      }
+    }
+
+    class Signal {
+      constructor(name, bits) {
+        this.name = name;
+        this.bits = bits;
+        this.values = [];
+      }
+
+      addValue(time, value) {
+        const vc = new ValueChange(time, value);
+        this.values.push(vc);
+      }
+
+      getLastValue() {
+        if (this.values.length > 0) {
+          return this.values[this.values.length - 1];
+        } else {
+          return null;
+        }
+      }
+
+      getName() {
+        return this.name;
+      }
+      getBits() {
+        return this.bits;
+      }
+
+      draw(canvas, offset, startTime, endTime) {
+        const ctx = canvas.getContext("2d");
+        ctx.strokeStyle = '#0077ff';
+        ctx.lineWidth = 2;
+
+        console.log("draw begin");
+
+        let delta = (endTime - startTime) / canvas.width;
+        // Set starting point
+        let currValue = this.values[0].value;
+        let idx = 0;
+        for (; idx < this.values.length; idx++) {
+          if (this.values[idx].getTime() > startTime) {
+            break;
+          }
+          currValue = this.values[idx].value;
+        }
+        ctx.beginPath();
+        ctx.moveTo(0, offset + (currValue ? -8 : -2));
+        for (; idx < this.values.length && this.values[idx].time < endTime; idx++) {
+          ctx.lineTo((this.values[idx].time - startTime) / delta, offset + (currValue ? -8 : -2));
+          currValue = this.values[idx].value;
+          ctx.lineTo((this.values[idx].time - startTime) / delta, offset + (currValue ? -8 : -2));
+        }
+        ctx.lineTo(canvas.width - 1, offset + (currValue ? -8 : -2));
+        ctx.stroke();
+      }
+    }
+
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = width;
+    canvas.height = height;
+
+    signals = [];
+    numSamples = 0;
+
+    zoomStart = 0;
+    zoomEnd = 0;
+
+    function updateSignals(samples) {
+      signals.length = 0; // Clear array
+      numSamples = samples.length;
+      // Assume each sample is 8 bits and that it represents 8 different
+      // signals each of 1 bit.
+      for (let i = 0; i < 8; i++) {
+        sig = new Signal('foobar', 1);
+        signals.push(sig)
+        for (let time = 0; time < samples.length; time++) {
+          value = (samples[time] & (1 << i)) ? 1 : 0;
+          last = sig.getLastValue();
+          if (last == null || value != last.value) {
+            sig.addValue(time, value);
+          }
+        }
+      }
+    }
+
+    function drawSignals() {
+      ctx.fillStyle = "lightblue";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      for (let i = 0; i < signals.length; i++) {
+        sig = signals[i];
+        sig.draw(canvas, (i + 1) * 20, zoomStart, zoomEnd);
+      }
+    }
+
+    function onClickUpdate() {
+      fetch('/ila_raw.bin')
+        .then(response => response.arrayBuffer())
+        .then(buffer => {
+          const u8arr = new Uint8Array(buffer);
+          updateSignals(u8arr);
+          zoomStart = 0;
+          zoomEnd = numSamples;
+          drawSignals();
+        })
+        .catch(error => console.error('Error:', error));
+    }
+
+    function onClickZoomAll() {
+      zoomStart = 0;
+      zoomEnd = numSamples;
+      drawSignals();
+    }
+    function onClickZoomIn() {
+      diff = zoomEnd - zoomStart;
+      if (diff > 16) {
+        zoomStart += diff / 4;
+        zoomEnd -= diff / 4;
+        drawSignals();
+      }
+    }
+    function onClickZoomOut() {
+      diff = zoomEnd - zoomStart;
+      if (diff < numSamples) {
+        zoomStart -= diff / 4;
+        zoomEnd += diff / 4;
+        drawSignals();
+      }
+    }
+
+canvas.addEventListener("mousemove", function(event) {
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+
+  drawSignals();
+
+  ctx.strokeStyle = '#ff0000';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x, 0);
+  ctx.lineTo(x, canvas.height - 1);
+  ctx.stroke();
+});
+  </script>
+</body>
+</html>

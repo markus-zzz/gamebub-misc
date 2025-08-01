@@ -1,0 +1,4 @@
+Prepare HTML to be compiled into firmware
+```
+$ xxd -i html/index.html main/index.html.h
+```
