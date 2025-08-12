@@ -13,11 +13,12 @@ set_property -dict { PACKAGE_PIN M13    IOSTANDARD LVCMOS33 } [get_ports { pmod[
 # MCU Communication
 ########################################
 set_property -dict { PACKAGE_PIN F4     IOSTANDARD LVCMOS33 } [get_ports { mcu_spi_clk  }];
+create_clock -add -name sys_spi_clk_pin -period 10.00 -waveform {0 5} [get_ports { mcu_spi_clk }];
 set_property -dict { PACKAGE_PIN K1     IOSTANDARD LVCMOS33 } [get_ports { mcu_spi_cs_n }];
-set_property -dict { PACKAGE_PIN J2     IOSTANDARD LVCMOS33 } [get_ports { mcu_spi_d[0] }];
-set_property -dict { PACKAGE_PIN H1     IOSTANDARD LVCMOS33 } [get_ports { mcu_spi_d[1] }];
-set_property -dict { PACKAGE_PIN H2     IOSTANDARD LVCMOS33 } [get_ports { mcu_spi_d[2] }];
-set_property -dict { PACKAGE_PIN K2     IOSTANDARD LVCMOS33 } [get_ports { mcu_spi_d[3] }];
+set_property -dict { PACKAGE_PIN J2     IOSTANDARD LVCMOS33 } [get_ports { mcu_spi_mosi }];
+set_property -dict { PACKAGE_PIN H1     IOSTANDARD LVCMOS33 } [get_ports { mcu_spi_miso }];
+#set_property -dict { PACKAGE_PIN H2     IOSTANDARD LVCMOS33 } [get_ports { mcu_spi_d[2] }];
+#set_property -dict { PACKAGE_PIN K2     IOSTANDARD LVCMOS33 } [get_ports { mcu_spi_d[3] }];
 set_property -dict { PACKAGE_PIN J3     IOSTANDARD LVCMOS33 } [get_ports { mcu_irq_n    }];
 
 ########################################

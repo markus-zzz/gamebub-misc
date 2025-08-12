@@ -2,6 +2,8 @@ set outputDir ./out
 file mkdir $outputDir
 
 read_verilog top.v
+read_verilog -sv spi-slow.sv
+read_verilog spram.v
 read_xdc io.xdc
 
 synth_design -top top -part xc7a100tcsg324-2

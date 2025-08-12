@@ -2,9 +2,11 @@
 
 module top(
 	input wire clk_50mhz,
-	inout wire [3:0] pmod,
+	output wire [3:0] pmod,
+  input wire mcu_spi_cs_n,
   input wire mcu_spi_clk,
-  inout wire [3:0] mcu_spi_d,
+  input wire mcu_spi_mosi,
+  output wire mcu_spi_miso,
   output reg        lcd_dotclk,
   output reg        lcd_hsync,
   output reg        lcd_vsync,
@@ -12,46 +14,42 @@ module top(
   output reg [17:0] lcd_db,
   input wire        lcd_te
 );
-  wire rst;
-  assign rst = mcu_spi_d[3];
-	reg [31:0] cntr;
-	reg [3:0] r;
-	assign pmod = r;
-	//assign pmod = (r == 4'b0000 ? 4'b1111 : 4'b0000);
-	always @(posedge clk_50mhz) begin
-		if (cntr == 50_000) begin
-			cntr <= 0;
-			r <= r + 1;
-		end
-		else begin
-			cntr <= cntr + 1;
-		end
-	end
 
-  //
-  // SPI - number source (one byte wide numbers)
-  //
-  reg [2:0] spi_clk_sync;
-  reg [7:0] spi_miso_shift;
-  reg [11:0] spi_cntr;
+  wire [31:0] bus_addr;
+  wire [31:0] bus_wdata;
+  wire bus_wen;
 
-  assign mcu_spi_d[1] = spi_miso_shift[7];
+  reg [17:0] border;
+
+  assign pmod = {mcu_spi_mosi, mcu_spi_cs_n, mcu_spi_clk};
+  wire [31:0] ram_0_do;
+
+  spi_slave spi_slave_0(
+	  .clk(clk_50mhz),
+    .spi_cs_n(mcu_spi_cs_n),
+    .spi_clk(mcu_spi_clk),
+    .spi_miso(mcu_spi_miso),
+    .spi_mosi(mcu_spi_mosi),
+    .bus_addr(bus_addr),
+    .bus_rdata(ram_0_do),
+    .bus_wdata(bus_wdata),
+    .bus_wen(bus_wen)
+  );
+
+  spram ram_0(
+    .clk(clk_50mhz),
+    .rst(1'b0),
+    .ce(1'b1),
+    .we(bus_wen),
+    .oe(1'b1),
+    .addr(bus_addr[31:2]),
+    .di(bus_wdata),
+    .do(ram_0_do)
+  );
+
   always @(posedge clk_50mhz) begin
-    if (rst) begin
-      spi_clk_sync <= 0;
-      spi_cntr <= 0;
-      spi_miso_shift <= 0;
-    end
-    else begin
-      spi_clk_sync <= {mcu_spi_clk, spi_clk_sync[2:1]};
-      if (~spi_clk_sync[0] & spi_clk_sync[1]) begin
-        spi_cntr <= spi_cntr + 1;
-        if (spi_cntr[2:0] == 0) begin
-          spi_miso_shift <= spi_cntr[10:3];
-        end else begin
-          spi_miso_shift <= {spi_miso_shift[6:0], 1'b0};
-        end
-      end
+    if (bus_wen && (bus_addr == 32'hf800_1010)) begin
+      border <= bus_wdata;
     end
   end
 
@@ -133,7 +131,7 @@ module top(
 
     if ((hpos == HACT_start) || (hpos == HACT_end - 1) || (vpos == VACT_start) || (vpos == VACT_end - 1)) begin
       // Draw white border
-      lcd_db <= {6'h3f, 6'h3f, 6'h3f};
+      lcd_db <= border;
     end
     else if ((vpos - VACT_start > image_pos_y) && (vpos - VACT_start <= image_pos_y + 128) && (hpos - HACT_start > image_pos_x) && (hpos - HACT_start <= image_pos_x + 128)) begin
       // Draw image
@@ -173,6 +171,7 @@ module top(
   end
 endmodule
 
+`ifdef TB
 module tb;
   reg clk;
   reg clk_spi;
@@ -180,18 +179,32 @@ module tb;
   always #5 clk = ~clk;
   always #40 clk_spi = ~clk_spi;
 
+  reg [2:0] stimuli[0:1000000];
+  integer idx;
+
+  wire [2:0] stim;
+  assign stim = stimuli[idx];
+
+  always @(posedge clk) begin
+    idx <= idx + 1;
+  end
+
   top u_top(
     .clk_50mhz(clk),
-    .mcu_spi_clk(clk_spi)
+    .mcu_spi_clk(stim[2]),
+    .mcu_spi_cs_n(stim[1]),
+    .mcu_spi_mosi(stim[0])
   );
 
   initial begin
+    $readmemb("spi.vh", stimuli);
     $dumpfile("dump.vcd"); // Output VCD file name
     $dumpvars;
-
+    idx = 0;
     clk = 0;
     clk_spi = 0;
-    #1000000;
+    #2000000;
     $finish;
   end
 endmodule
+`endif

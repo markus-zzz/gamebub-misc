@@ -27,7 +27,11 @@
 
 uint8_t buf[BUF_SIZE];
 
-static spi_device_handle_t fpga_spi;
+static spi_device_handle_t fpga_spi_prog = NULL;
+static spi_device_handle_t fpga_spi_user = NULL;
+
+uint32_t fpga_user_read_u32(uint32_t addr);
+void fpga_user_write_u32(uint32_t addr, uint32_t data);
 
 static void fpga_program_task(void *arg) {
   int server_fd, client_fd;
@@ -77,7 +81,7 @@ static void fpga_program_task(void *arg) {
     }
 
     printf("Programming: ");
-    spi_device_acquire_bus(fpga_spi, portMAX_DELAY);
+    spi_device_acquire_bus(fpga_spi_prog, portMAX_DELAY);
     while (1) {
       int res = recv(client_fd, buf, BUF_SIZE, 0);
       if (res == 0) {
@@ -87,19 +91,72 @@ static void fpga_program_task(void *arg) {
       txn.length = res * 8;
       txn.tx_buffer = buf;
       txn.flags = SPI_TRANS_CS_KEEP_ACTIVE; // Keep CS active
-      esp_err_t ret = spi_device_polling_transmit(fpga_spi, &txn); // Transmit!
+      esp_err_t ret =
+          spi_device_polling_transmit(fpga_spi_prog, &txn); // Transmit!
       assert(ret == ESP_OK);
       printf("#");
     }
     printf("\n");
-    spi_device_release_bus(fpga_spi);
+    spi_device_release_bus(fpga_spi_prog);
 
     vTaskDelay(100 / portTICK_PERIOD_MS);
     printf("Done pin (should be 1): %d\n", gpio_get_level(PIN_FPGA_DONE));
 
     printf("Client disconnected.\n");
     close(client_fd);
+
+    //
+    // SPI testing
+    //
+    uint32_t colors[] = {0x3fUL, 0x3fUL << 6, 0x3fUL << 12};
+    unsigned idx = 0;
+    static uint32_t refs[64];
+    unsigned rounds = 0;
+    unsigned errors = 0;
+    while (1) {
+      sleep(1);
+      uint32_t border = colors[idx++ % 3];
+      fpga_user_write_u32(0xf8001010, border);
+
+      for (unsigned i = 0; i < 64; i++) {
+        uint32_t val = esp_random();
+        refs[i] = val;
+        fpga_user_write_u32(i * 4, val);
+      }
+      for (unsigned i = 0; i < 64; i++) {
+        uint32_t val = fpga_user_read_u32(i * 4);
+        if (refs[i] != val) {
+          printf("%u 0x%08lx != 0x%08lx\n", i, refs[i], val);
+          errors++;
+        }
+      }
+      rounds++;
+      printf("Rounds %u (errors %u)\r", rounds, errors);
+      fflush(stdout);
+    }
   }
+}
+
+uint32_t fpga_user_read_u32(uint32_t addr) {
+  uint32_t buf;
+  spi_transaction_t txn = {};
+  txn.cmd = 0x1234;
+  txn.addr = addr;
+  txn.length = 4 * 8;
+  txn.rxlength = 4 * 8;
+  txn.rx_buffer = &buf;
+  spi_device_polling_transmit(fpga_spi_user, &txn);
+  return SPI_SWAP_DATA_RX(buf, 32);
+}
+
+void fpga_user_write_u32(uint32_t addr, uint32_t data) {
+  uint32_t buf = SPI_SWAP_DATA_TX(data, 32);
+  spi_transaction_t txn = {};
+  txn.cmd = 0x8234;
+  txn.addr = addr;
+  txn.length = 4 * 8;
+  txn.tx_buffer = &buf;
+  spi_device_polling_transmit(fpga_spi_user, &txn);
 }
 
 #define CONF_GPIO(pin_, mode_)                                                 \
@@ -129,20 +186,34 @@ void fpga_init() {
                              .quadhd_io_num = -1,
                              .max_transfer_sz = BUF_SIZE};
 
-  spi_device_interface_config_t devcfg = {
-      .clock_speed_hz = 80 * 1000 * 1000,
-      .mode = 0,
-      .spics_io_num = PIN_FPGA_SPI_CS,
-      .queue_size = 4,
-      .pre_cb = NULL,
-  };
-
   // Initialize the dedicated FPGA SPI bus
   ret = spi_bus_initialize(FPGA_SPI_BUS, &buscfg, SPI_DMA_CH_AUTO);
   ESP_ERROR_CHECK(ret);
 
-  // Attach the FPGA to its SPI bus
-  ret = spi_bus_add_device(FPGA_SPI_BUS, &devcfg, &fpga_spi);
+  // Attach the FPGA (programming) to its SPI bus
+  spi_device_interface_config_t devcfg_prog = {
+      .clock_speed_hz = 80 * 1000 * 1000,
+      .mode = 0,
+      .spics_io_num = PIN_FPGA_SPI_CS,
+      .queue_size = 4,
+  };
+
+  ret = spi_bus_add_device(FPGA_SPI_BUS, &devcfg_prog, &fpga_spi_prog);
+  ESP_ERROR_CHECK(ret);
+
+  // Attach the FPGA (user) to its SPI bus
+  spi_device_interface_config_t devcfg_user = {
+      .clock_speed_hz = 8 * 1000 * 1000,
+      .command_bits = 16,
+      .address_bits = 32,
+      .dummy_bits = 8,
+      .mode = 0,
+      .sample_point = SPI_SAMPLING_POINT_PHASE_0,
+      .spics_io_num = PIN_FPGA_SPI_CS,
+      .queue_size = 4,
+  };
+
+  ret = spi_bus_add_device(FPGA_SPI_BUS, &devcfg_user, &fpga_spi_user);
   ESP_ERROR_CHECK(ret);
 
   // Enable all FPGA power domains
