@@ -18,7 +18,9 @@
  *
  */
 
-module spram(clk, rst, ce, we, oe, addr, di, do);
+`default_nettype none
+
+module spram(clk, rst, ce, we, oe, addr, din, dout);
 	//
 	// Default address and data buses width (1024*32)
 	//
@@ -28,14 +30,14 @@ module spram(clk, rst, ce, we, oe, addr, di, do);
 	//
 	// Generic synchronous single-port RAM interface
 	//
-	input           clk;  // Clock, rising edge
-	input           rst;  // Reset, active high
-	input           ce;   // Chip enable input, active high
-	input           we;   // Write enable input, active high
-	input           oe;   // Output enable input, active high
-	input  [aw-1:0] addr; // address bus inputs
-	input  [dw-1:0] di;   // input data bus
-	output reg [dw-1:0] do;   // output data bus
+	input wire          clk;  // Clock, rising edge
+	input wire          rst;  // Reset, active high
+	input wire          ce;   // Chip enable input, active high
+	input wire          we;   // Write enable input, active high
+	input wire          oe;   // Output enable input, active high
+	input wire [aw-1:0] addr; // address bus inputs
+	input wire [dw-1:0] din;  // input data bus
+	output reg [dw-1:0] dout; // output data bus
 
 	//
 	// Module body
@@ -50,7 +52,7 @@ module spram(clk, rst, ce, we, oe, addr, di, do);
 
 	always @*
 //		if (oe_r)
-			do = mem[ra];
+			dout = mem[ra];
 
 	// read operation
 	always @(posedge clk)
@@ -60,8 +62,8 @@ module spram(clk, rst, ce, we, oe, addr, di, do);
 	// write operation
 	always @(posedge clk) begin
 	  if (we && ce) begin
-	    mem[addr] <= di;
-            // $display("mem[%h] <= %h\n", addr, di);
+	    mem[addr] <= din;
+            // $display("mem[%h] <= %h\n", addr, din);
           end
         end
 

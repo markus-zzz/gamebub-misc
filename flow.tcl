@@ -1,8 +1,10 @@
 set outputDir ./out
 file mkdir $outputDir
 
-read_verilog top.v
-read_verilog -sv spi-slow.sv
+read_verilog -sv reg_map_pkg.sv
+read_verilog -sv top.sv
+read_verilog -sv spi_slow.sv
+read_verilog -sv ila.sv
 read_verilog spram.v
 read_xdc io.xdc
 

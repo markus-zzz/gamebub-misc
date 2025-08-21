@@ -1,0 +1,18 @@
+Integrated Logic Analyzer (ILA)
+===============================
+Basic operation; when armed the ILA is sampling to its BRAM continuously, once
+triggered it will store an additional R_POST_TRIG_SAMPLES to its BRAM. This
+allows for arbitrary number of samples to be recorded pre-trigger condition.
+
+The total depth of the BRAM could be probed by writing all-ones to
+R_POST_TRIG_SAMPLES and then read back adding a one (as non-implemented bits
+will always read as zero).
+
+
+Low-res overlay graphics
+========================
+Maybe half or one forth of the native resolution. Single port BRAM, SPI
+has read/write and video has read only. From the point where SPI presents the address
+the timing is quite lax until data need to be ready/consumed. Video can have
+priority and SPI will make its access in one of the available slots.
+
