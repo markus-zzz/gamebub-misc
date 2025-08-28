@@ -2,9 +2,15 @@
 
 import reg_map_pkg::*;
 
+// R_ILA_CTRL_STATUS
+// -------------------
+// bit 0    - running R/W
+// bit 1    - triggered RO
+// bit 31:8 - Write is post trigger samples, Read is trigger index
+
 module ila #(
-  parameter logic [7:0] WIDTH = 32,
-  parameter int DEPTH = 1024
+  parameter logic [15:0] WIDTH = 32,
+  parameter logic [15:0] DEPTH = 1024
 )
 (
   input wire clk,
@@ -34,7 +40,7 @@ module ila #(
     .ce(1'b1),
     .we(running),
     .oe(1'b1),
-    .addr(running ? sample_widx : bus_addr[$clog2(DEPTH)-1:0]),
+    .addr(running ? sample_widx : bus_addr[31:2]),
     .din(sample_in),
     .dout(ram_do)
   );
@@ -46,32 +52,30 @@ module ila #(
 
   always_ff @(posedge clk) begin
     if (rst) trigger_idx <= 0;
-    else if (trigger_in) trigger_idx <= sample_widx;
+    else if (trigger_in & ~triggered) trigger_idx <= sample_widx;
   end
 
   always_ff @(posedge clk) begin
-    if (running & trigger_in) sample_cntr <= 0; //r_ila_trig_post_samples; // XXX: This could be same register i.e. sw reloads every time
+    if (bus_addr == R_ILA_CTRL_STATUS && bus_wen) sample_cntr <= bus_wdata[31:8];
     else if (running & triggered) sample_cntr <= sample_cntr - 1;
   end
 
   always_ff @(posedge clk) begin
     if (rst) running <= 0;
-    else if (bus_addr == R_ILA_CTRL && bus_wen && bus_wdata[0]) running <= 1;
-    else if (sample_cntr == 0) running <= 0;
+    else if (bus_addr == R_ILA_CTRL_STATUS && bus_wen) running <= bus_wdata[0];
+    else if (triggered && sample_cntr == 0) running <= 0;
   end
 
   always_ff @(posedge clk) begin
     if (rst) triggered <= 0;
+    else if (bus_addr == R_ILA_CTRL_STATUS && bus_wen && bus_wdata[0]) triggered <= 0;
     else if (running & trigger_in) triggered <= 1;
   end
 
   always_comb begin
     case (bus_addr)
-      R_ILA_INFO: bus_rdata = {WIDTH};
-      R_ILA_CTRL: bus_rdata = 0;
-      R_ILA_STATUS: bus_rdata = 0;
-      R_ILA_TRIG_POST_SAMPLES: bus_rdata = 0;
-      R_ILA_TRIG_IDX: bus_rdata = trigger_idx;
+      R_ILA_INFO: bus_rdata = {DEPTH, WIDTH};
+      R_ILA_CTRL_STATUS: bus_rdata = {trigger_idx, 6'h0, triggered, running};
       default: bus_rdata = ram_do;
     endcase
   end

@@ -11,6 +11,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include "fpga.h"
+
 #define PIN_FPGA_POWER 46
 #define PIN_FPGA_DONE 6
 #define PIN_FPGA_PROGRAM_B 7
@@ -30,8 +32,7 @@ uint8_t buf[BUF_SIZE];
 static spi_device_handle_t fpga_spi_prog = NULL;
 static spi_device_handle_t fpga_spi_user = NULL;
 
-uint32_t fpga_user_read_u32(uint32_t addr);
-void fpga_user_write_u32(uint32_t addr, uint32_t data);
+static SemaphoreHandle_t fpga_spi_user_mutex = NULL;
 
 static void fpga_program_task(void *arg) {
   int server_fd, client_fd;
@@ -106,6 +107,12 @@ static void fpga_program_task(void *arg) {
     close(client_fd);
 
     //
+    // Pulse core reset
+    //
+    fpga_user_write_u32(R_RESET_CTRL, 1); // reset=1
+    fpga_user_write_u32(R_RESET_CTRL, 0); // reset=0
+
+    //
     // SPI testing
     //
     uint32_t colors[] = {0x3fUL, 0x3fUL << 6, 0x3fUL << 12};
@@ -121,10 +128,10 @@ static void fpga_program_task(void *arg) {
       for (unsigned i = 0; i < 64; i++) {
         uint32_t val = esp_random();
         refs[i] = val;
-        fpga_user_write_u32(i * 4, val);
+        fpga_user_write_u32(BASE_SCRATCH_RAM + i * 4, val);
       }
       for (unsigned i = 0; i < 64; i++) {
-        uint32_t val = fpga_user_read_u32(i * 4);
+        uint32_t val = fpga_user_read_u32(BASE_SCRATCH_RAM + i * 4);
         if (refs[i] != val) {
           printf("%u 0x%08lx != 0x%08lx\n", i, refs[i], val);
           errors++;
@@ -145,7 +152,9 @@ uint32_t fpga_user_read_u32(uint32_t addr) {
   txn.length = 4 * 8;
   txn.rxlength = 4 * 8;
   txn.rx_buffer = &buf;
+  xSemaphoreTake(fpga_spi_user_mutex, portMAX_DELAY);
   spi_device_polling_transmit(fpga_spi_user, &txn);
+  xSemaphoreGive(fpga_spi_user_mutex);
   return SPI_SWAP_DATA_RX(buf, 32);
 }
 
@@ -156,7 +165,9 @@ void fpga_user_write_u32(uint32_t addr, uint32_t data) {
   txn.addr = addr;
   txn.length = 4 * 8;
   txn.tx_buffer = &buf;
+  xSemaphoreTake(fpga_spi_user_mutex, portMAX_DELAY);
   spi_device_polling_transmit(fpga_spi_user, &txn);
+  xSemaphoreGive(fpga_spi_user_mutex);
 }
 
 #define CONF_GPIO(pin_, mode_)                                                 \
@@ -218,6 +229,8 @@ void fpga_init() {
 
   // Enable all FPGA power domains
   gpio_set_level(PIN_FPGA_POWER, 1);
+
+  fpga_spi_user_mutex = xSemaphoreCreateMutex();
 }
 
 void fpga_start_program_service() {

@@ -21,10 +21,15 @@
   <h1>Welcome to My Page</h1>
   <p>Click the button below to update the image</p>
   <div>
+    <button onclick="onClickArm()">Arm</button>
     <button onclick="onClickUpdate()">Update</button>
     <button onclick="onClickZoomAll()">ZoomAll</button>
     <button onclick="onClickZoomIn()">ZoomIn</button>
     <button onclick="onClickZoomOut()">ZoomOut</button>
+  </div>
+  <div>
+    <div id="runningText">Not running</div>
+    <div id="triggeredText">Not triggered</div>
   </div>
   <canvas id="canvas"></canvas>
 
@@ -116,9 +121,9 @@
     function updateSignals(samples) {
       signals.length = 0; // Clear array
       numSamples = samples.length;
-      // Assume each sample is 8 bits and that it represents 8 different
+      // Assume each sample is 32 bits and that it represents 32 different
       // signals each of 1 bit.
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 32; i++) {
         sig = new Signal('foobar', 1);
         signals.push(sig)
         for (let time = 0; time < samples.length; time++) {
@@ -141,17 +146,36 @@
       }
     }
 
-    function onClickUpdate() {
-      fetch('/ila_raw.bin')
-        .then(response => response.arrayBuffer())
-        .then(buffer => {
-          const u8arr = new Uint8Array(buffer);
-          updateSignals(u8arr);
-          zoomStart = 0;
-          zoomEnd = numSamples;
-          drawSignals();
-        })
+    function onPollStatus() {
+      fetch('/ila_status').then((response) => {
+      response.json().then((data) => {
+        // console.log(data);
+        const runningElement = document.getElementById("runningText");
+        const triggeredElement = document.getElementById("triggeredText");
+
+        runningElement.style.color = data.running ? "red" : "black";
+        runningElement.textContent = data.running ? "Running" : "Not Running";
+        triggeredElement.style.color = data.triggered ? "red" : "black";
+        triggeredElement.textContent = data.triggered ? "Triggered" : "Not Triggered";
+      });
+    });
+    }
+
+    function onClickArm() {
+      fetch('/ila_arm')
         .catch(error => console.error('Error:', error));
+    }
+
+    function onClickUpdate() {
+      fetch('/ila_samples').then((response) => {
+      response.json().then((data) => {
+        // console.log(data);
+        updateSignals(data.samples);
+        zoomStart = 0;
+        zoomEnd = numSamples;
+        drawSignals();
+      });
+    });
     }
 
     function onClickZoomAll() {
@@ -176,6 +200,7 @@
       }
     }
 
+setInterval(onPollStatus, 1000);
 canvas.addEventListener("mousemove", function(event) {
   const rect = canvas.getBoundingClientRect();
   const x = event.clientX - rect.left;

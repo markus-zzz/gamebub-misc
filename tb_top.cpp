@@ -2,38 +2,51 @@
 #include "verilated.h"
 #include "verilated_fst_c.h"
 #include <gtk/gtk.h>
+#include <iostream>
+#include <memory>
+#include <vector>
+
+#define R_RESET_CTRL 0xf800'0000
+
+#define BASE_ILA 0xf810'0000
+#define R_ILA_INFO 0xf818'0000
+#define R_ILA_CTRL_STATUS 0xf818'0004
+#define BASE_ILA_RAM 0xf810'0000
+
+std::unique_ptr<Vtop> top;
+std::unique_ptr<VerilatedFstC> tfp;
 
 class FrameDumper {
 public:
-  FrameDumper(Vtop &top) : mTop(top) {
+  FrameDumper() {
     m_FramePixBuf =
         gdk_pixbuf_new(GDK_COLORSPACE_RGB, FALSE, 8, c_Xres, c_Yres);
     gdk_pixbuf_fill(m_FramePixBuf, 0);
   }
-  void tick() {
-    if (!mPrev_lcd_dotclk && mTop.lcd_dotclk) {
+  void doTick(uint64_t tick) {
+    if (!mPrev_lcd_dotclk && top->lcd_dotclk) {
 
       bool FrameDone = false;
 
-      if (!mPrev_lcd_hsync && mTop.lcd_hsync) {
+      if (!mPrev_lcd_hsync && top->lcd_hsync) {
         m_HCntr = 0;
         m_VCntr++;
       }
-      mPrev_lcd_hsync = mTop.lcd_hsync;
+      mPrev_lcd_hsync = top->lcd_hsync;
 
-      if (!mPrev_lcd_vsync && mTop.lcd_vsync) {
+      if (!mPrev_lcd_vsync && top->lcd_vsync) {
         m_VCntr = 0;
         FrameDone = true;
       }
-      mPrev_lcd_vsync = mTop.lcd_vsync;
+      mPrev_lcd_vsync = top->lcd_vsync;
 
       unsigned m_HCntrShifted = m_HCntr - 55;
       unsigned m_VCntrShifted = m_VCntr - 15;
       if (0 <= m_HCntrShifted && m_HCntrShifted < c_Xres &&
           0 <= m_VCntrShifted && m_VCntrShifted < c_Yres) {
-        guchar Red = ((mTop.lcd_db >> 0) & 0x3f) << 2;
-        guchar Green = ((mTop.lcd_db >> 6) & 0x3f) << 2;
-        guchar Blue = ((mTop.lcd_db >> 12) & 0x3f) << 2;
+        guchar Red = ((top->lcd_db >> 0) & 0x3f) << 2;
+        guchar Green = ((top->lcd_db >> 6) & 0x3f) << 2;
+        guchar Blue = ((top->lcd_db >> 12) & 0x3f) << 2;
         PutPixel(m_FramePixBuf, m_HCntrShifted, m_VCntrShifted, Red, Green,
                  Blue);
       }
@@ -48,7 +61,7 @@ public:
         gdk_pixbuf_fill(m_FramePixBuf, 0);
       }
     }
-    mPrev_lcd_dotclk = mTop.lcd_dotclk;
+    mPrev_lcd_dotclk = top->lcd_dotclk;
   }
 
 private:
@@ -88,16 +101,35 @@ private:
   unsigned mPrev_lcd_hsync = 0;
   unsigned mPrev_lcd_vsync = 0;
   unsigned mFrameIndex = 0;
-  Vtop &mTop;
 };
 
-class SpiWrite {
+class Command {
 public:
-  SpiWrite(Vtop &top, uint32_t addr, uint32_t data)
-      : mTop(top), mAddr(addr), mData(data) {}
-  bool tick() {
+  Command() {}
+  virtual ~Command() {}
+  virtual bool doTick(uint64_t tick) = 0;
+};
+
+class Wait : public Command {
+public:
+  Wait(uint64_t untilTick) : mUntilTick(untilTick) {}
+  bool doTick(uint64_t tick) override { return tick >= mUntilTick; }
+
+private:
+  uint64_t mUntilTick;
+};
+
+class Spi : public Command {
+protected:
+  Spi() {}
+  bool doTick(uint64_t tick) override {
+    if (!top->clk_50mhz)
+      return false;
+
     switch (mState) {
     case State::PRE_CS_HI:
+      top->mcu_spi_clk = 1;
+      break;
     case State::PRE_CS_LO:
       // Do nothing
       break;
@@ -105,8 +137,8 @@ public:
     case State::ADDR:
     case State::DUMMY:
     case State::DATA:
-      mTop.mcu_spi_clk = !mTop.mcu_spi_clk;
-      if (mTop.mcu_spi_clk)
+      top->mcu_spi_clk = !top->mcu_spi_clk;
+      if (top->mcu_spi_clk)
         return false;
       break;
     case State::POST_CS_LO:
@@ -117,21 +149,21 @@ public:
 
     switch (mState) {
     case State::PRE_CS_HI:
-      mTop.mcu_spi_cs_n = 1;
+      top->mcu_spi_cs_n = 1;
       if (mCntr == 1) {
         mState = State::PRE_CS_LO;
         mCntr = 0;
       }
       break;
     case State::PRE_CS_LO:
-      mTop.mcu_spi_cs_n = 0;
+      top->mcu_spi_cs_n = 0;
       if (mCntr == 1) {
         mState = State::CMD;
         mCntr = 0;
       }
       break;
     case State::CMD:
-      mTop.mcu_spi_mosi = (mCmd & 0x8000) ? 1 : 0;
+      top->mcu_spi_mosi = (mCmd & 0x8000) ? 1 : 0;
       mCmd <<= 1;
       if (mCntr == 16) {
         mState = State::ADDR;
@@ -139,7 +171,7 @@ public:
       }
       break;
     case State::ADDR:
-      mTop.mcu_spi_mosi = (mAddr & 0x8000'0000) ? 1 : 0;
+      top->mcu_spi_mosi = (mAddr & 0x8000'0000) ? 1 : 0;
       mAddr <<= 1;
       if (mCntr == 32) {
         mState = State::DUMMY;
@@ -147,29 +179,31 @@ public:
       }
       break;
     case State::DUMMY:
-      mTop.mcu_spi_mosi = 0;
+      top->mcu_spi_mosi = 0;
       if (mCntr == 8) {
         mState = State::DATA;
+        mDataIn = 0;
         mCntr = 0;
       }
       break;
     case State::DATA:
-      mTop.mcu_spi_mosi = (mData & 0x8000'0000) ? 1 : 0;
-      mData <<= 1;
+      top->mcu_spi_mosi = (mDataOut & 0x8000'0000) ? 1 : 0;
+      mDataOut <<= 1;
+      mDataIn = (mDataIn << 1) | (top->mcu_spi_miso & 1);
       if (mCntr == 32 + 1) { // XXX: Why +1?
         mState = State::POST_CS_LO;
         mCntr = 0;
       }
       break;
     case State::POST_CS_LO:
-      mTop.mcu_spi_cs_n = 0;
+      top->mcu_spi_cs_n = 0;
       if (mCntr == 1) {
         mState = State::POST_CS_HI;
         mCntr = 0;
       }
       break;
     case State::POST_CS_HI:
-      mTop.mcu_spi_cs_n = 1;
+      top->mcu_spi_cs_n = 1;
       if (mCntr == 1) {
         return true;
       }
@@ -180,7 +214,6 @@ public:
     return false;
   }
 
-private:
   enum class State {
     PRE_CS_HI,
     PRE_CS_LO,
@@ -192,41 +225,91 @@ private:
     POST_CS_HI
   } mState = State::PRE_CS_HI;
   unsigned mCntr = 0;
-  Vtop &mTop;
   uint16_t mCmd = 0x8000; // Write
   uint32_t mAddr;
-  uint32_t mData;
+  uint32_t mDataIn;
+  uint32_t mDataOut;
 };
 
-int main(int argc, char **argv) {
-  Verilated::commandArgs(argc, argv);
+class SpiRead : public Spi {
+public:
+  SpiRead(uint32_t addr, uint32_t &data) {
+    mCmd = 0x0000; // Read command
+    mAddr = addr;
+    mDataOut = data;
+  }
+  bool doTick(uint64_t tick) override {
+    auto res = Spi::doTick(tick);
+    if (res)
+      std::cout << "SpiRead:  data=" << std::hex << (mDataIn << 1) << "\n";
+    return res;
+  }
+};
+
+class SpiWrite : public Spi {
+public:
+  SpiWrite(uint32_t addr, uint32_t data) {
+    mCmd = 0x8000; // Write command
+    mAddr = addr;
+    mDataOut = data;
+  }
+};
+
+void runSim(const std::vector<std::unique_ptr<Command>> &commands) {
   Verilated::traceEverOn(true);
 
-  Vtop *top = new Vtop;
+  top = std::make_unique<Vtop>();
+  tfp = std::make_unique<VerilatedFstC>();
 
-  // Create FST trace object
-  VerilatedFstC *tfp = new VerilatedFstC;
-  top->trace(tfp, 99);
+  top->trace(tfp.get(), 99);
   tfp->open("dump.fst");
 
   top->clk_50mhz = 0;
-  // top->rst = 1;
-  top->mcu_spi_clk = 1;
 
-  FrameDumper frame(*top);
-  SpiWrite spi(*top, 0xf800'1010, 0xcafe'c0fe);
+  FrameDumper frame;
 
-  for (int i = 0; i < 50000000; ++i) {
+  uint64_t tick = 0;
+  for (auto cmd = commands.begin(); cmd != commands.end();) {
     top->clk_50mhz = !top->clk_50mhz;
-    frame.tick();
-    if ((i % 4) == 0 && top->clk_50mhz)
-      spi.tick();
+    frame.doTick(tick);
+    if (cmd != commands.end() && (*cmd)->doTick(tick)) {
+      cmd++;
+    }
     top->eval();
-    tfp->dump(i);
+    tfp->dump(tick);
+    tick++;
   }
 
   tfp->close();
-  delete tfp;
-  delete top;
+  tfp.reset();
+  top.reset();
+}
+
+template <class T, class... Args>
+void addCmd(std::vector<std::unique_ptr<Command>> &cmds, Args &&...args) {
+  cmds.push_back(std::make_unique<T>(std::forward<Args>(args)...));
+}
+
+int main(int argc, char **argv) {
+  Verilated::commandArgs(argc, argv);
+
+  std::vector<std::unique_ptr<Command>> cmds;
+
+  uint32_t readData;
+
+  addCmd<SpiWrite>(cmds, R_RESET_CTRL, 1);          // reset=1
+  addCmd<SpiWrite>(cmds, R_RESET_CTRL, 0);          // reset=0
+  addCmd<SpiWrite>(cmds, 0xf800'1010, 0xcafe'c0fe); // Set border color
+  addCmd<SpiWrite>(cmds, R_ILA_CTRL_STATUS,
+                   512 << 8 | 1);          // ILA post_trig=512 running=1
+  addCmd<SpiWrite>(cmds, 0x0, 0xcafec0fe); // ILA magic trigger word
+  addCmd<Wait>(cmds, 5'000'000);
+  addCmd<SpiRead>(cmds, R_ILA_CTRL_STATUS, readData);
+  for (unsigned i = 0; i < 8; i++) {
+    addCmd<SpiRead>(cmds, BASE_ILA_RAM + i * sizeof(uint32_t), readData);
+  }
+  addCmd<Wait>(cmds, 5'005'000);
+  runSim(cmds);
+
   return 0;
 }
