@@ -153,6 +153,26 @@ void setup_sdcard() {
   }
 }
 
+extern const unsigned char font[];
+
+void ovl_char(unsigned x, unsigned y, char chr) {
+  x = 39 - x;
+  for (unsigned i = 0; i < 8; i++) {
+    uint32_t addr = 0xf8300000 + 40 * (i + y * 8) + (x >> 2) * 4;
+    uint32_t mask = 0xffUL << (8 * (x & 3));
+    uint32_t dword = fpga_user_read_u32(addr) & ~mask;
+    dword |= font[(unsigned)(chr & 0x3f) * 8 + i] << (8 * (x & 3));
+    fpga_user_write_u32(addr, dword);
+    // printf("ovl_char: addr=0x%08lx dword=0x%08lx\n", addr, dword);
+  }
+}
+
+void ovl_str(unsigned x, unsigned y, const char *str) {
+  for (unsigned i = 0; str[i] != '\0'; i++) {
+    ovl_char(x + i, y, str[i]);
+  }
+}
+
 void lcd_init();
 void fpga_init();
 void start_webserver();
@@ -200,6 +220,11 @@ void app_main(void) {
   const char *sdcard_fpga_bit = "/sdcard/fpga.bit";
   ESP_LOGI(TAG, "Program FPGA from '%s'\n", sdcard_fpga_bit);
   fpga_program_path(sdcard_fpga_bit);
+
+  for (unsigned i = 0; i < 'Z' - 'A' + 1; i++) {
+    ovl_char(0, i, 'a' + i);
+  }
+  ovl_str(0, 30, "HELLO WORLD!");
 
   fpga_start_program_service();
 }

@@ -47,3 +47,19 @@ set_property -dict { PACKAGE_PIN H17    IOSTANDARD LVCMOS33 } [get_ports { lcd_d
 set_property -dict { PACKAGE_PIN H16    IOSTANDARD LVCMOS33 } [get_ports { lcd_db[15]  }];
 set_property -dict { PACKAGE_PIN G18    IOSTANDARD LVCMOS33 } [get_ports { lcd_db[16]  }];
 set_property -dict { PACKAGE_PIN G17    IOSTANDARD LVCMOS33 } [get_ports { lcd_db[17]  }];
+
+########################################
+# Buttons
+########################################
+set_property -dict { PACKAGE_PIN N5     IOSTANDARD LVCMOS33 } [get_ports { btn_a      }];
+set_property -dict { PACKAGE_PIN P5     IOSTANDARD LVCMOS33 } [get_ports { btn_b      }];
+set_property -dict { PACKAGE_PIN L6     IOSTANDARD LVCMOS33 } [get_ports { btn_x      }];
+set_property -dict { PACKAGE_PIN M6     IOSTANDARD LVCMOS33 } [get_ports { btn_y      }];
+set_property -dict { PACKAGE_PIN E5     IOSTANDARD LVCMOS33 } [get_ports { btn_up     }];
+set_property -dict { PACKAGE_PIN H5     IOSTANDARD LVCMOS33 } [get_ports { btn_down   }];
+set_property -dict { PACKAGE_PIN G6     IOSTANDARD LVCMOS33 } [get_ports { btn_left   }];
+set_property -dict { PACKAGE_PIN F5     IOSTANDARD LVCMOS33 } [get_ports { btn_right  }];
+set_property -dict { PACKAGE_PIN E6     IOSTANDARD LVCMOS33 } [get_ports { btn_l      }];
+set_property -dict { PACKAGE_PIN L5     IOSTANDARD LVCMOS33 } [get_ports { btn_r      }];
+set_property -dict { PACKAGE_PIN K5     IOSTANDARD LVCMOS33 } [get_ports { btn_start  }];
+set_property -dict { PACKAGE_PIN J5     IOSTANDARD LVCMOS33 } [get_ports { btn_select }];

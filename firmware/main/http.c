@@ -243,7 +243,7 @@ void start_webserver(void) {
   if (httpd_start(&server, &config) == ESP_OK) {
     {
       FILE *fp = fopen("/sdcard/ila.sig", "w");
-      fputs("{vpos[9:0], hpos[9:0]}", fp);
+      fputs("{btn_right[0:0],vpos[9:0], foo.hpos[9:0]}", fp);
       fclose(fp);
     }
     char buf[256];

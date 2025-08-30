@@ -15,4 +15,5 @@ localparam logic [31:0] R_ILA_CTRL_STATUS = 32'hf818_0004; // Bits to control li
 /////////////////////////////////////
 localparam logic [31:0] BASE_SCRATCH_RAM  = 32'hf820_0000;
 
+localparam logic [31:0] BASE_OVERLAY_RAM  = 32'hf830_0000;
 endpackage

@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 
+
 #define R_RESET_CTRL 0xf800'0000
 
 #define BASE_ILA 0xf810'0000
@@ -255,14 +256,15 @@ public:
   }
 };
 
-void runSim(const std::vector<std::unique_ptr<Command>> &commands) {
-  Verilated::traceEverOn(true);
+void runSim(const std::vector<std::unique_ptr<Command>> &commands, bool trace = false) {
+  Verilated::traceEverOn(trace);
 
   top = std::make_unique<Vtop>();
-  tfp = std::make_unique<VerilatedFstC>();
-
-  top->trace(tfp.get(), 99);
-  tfp->open("dump.fst");
+  if (trace) {
+    tfp = std::make_unique<VerilatedFstC>();
+    top->trace(tfp.get(), 99);
+    tfp->open("dump.fst");
+  }
 
   top->clk_50mhz = 0;
 
@@ -276,12 +278,14 @@ void runSim(const std::vector<std::unique_ptr<Command>> &commands) {
       cmd++;
     }
     top->eval();
-    tfp->dump(tick);
+    if (tfp) tfp->dump(tick);
     tick++;
   }
 
-  tfp->close();
-  tfp.reset();
+  if (tfp) {
+    tfp->close();
+    tfp.reset();
+  }
   top.reset();
 }
 
@@ -289,6 +293,8 @@ template <class T, class... Args>
 void addCmd(std::vector<std::unique_ptr<Command>> &cmds, Args &&...args) {
   cmds.push_back(std::make_unique<T>(std::forward<Args>(args)...));
 }
+
+#include "firmware/main/font.c"
 
 int main(int argc, char **argv) {
   Verilated::commandArgs(argc, argv);
@@ -308,8 +314,23 @@ int main(int argc, char **argv) {
   for (unsigned i = 0; i < 8; i++) {
     addCmd<SpiRead>(cmds, BASE_ILA_RAM + i * sizeof(uint32_t), readData);
   }
-  addCmd<Wait>(cmds, 5'005'000);
-  runSim(cmds);
+  for (unsigned i = 0; i < 32; i++) {
+    addCmd<SpiWrite>(cmds, 0xf830'0000 + 4 * 10 * i, 0x8000'0001); // Write to overlay RAM
+  }
+  addCmd<SpiWrite>(cmds, 0xf830'0000 + 4, 0x8000'0001); // Write to overlay RAM
+#if 1
+  const unsigned char *p = &font[50*8];
+  for (unsigned i = 0; i < 8; i++) {
+    uint32_t mask = p[i];
+    addCmd<SpiWrite>(cmds, 0xf830'0000 + 8 + 4 * 10 * (5 + i), mask); // Write to overlay RAM
+  }
+  for (unsigned i = 0; i < 8; i++) {
+    addCmd<SpiRead>(cmds, 0xf830'0000 + 8 + 4 * 10 * (5 + i), readData);
+  }
+#endif
+
+  addCmd<Wait>(cmds, 10'005'000);
+  runSim(cmds, true);
 
   return 0;
 }
