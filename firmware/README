@@ -2,3 +2,5 @@ Prepare HTML to be compiled into firmware
 ```
 $ xxd -i html/index.html main/index.html.h
 ```
+
+idf.py menuconfig - enable fat support long filenames

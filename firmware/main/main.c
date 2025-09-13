@@ -1,12 +1,15 @@
 #include "driver/gpio.h"
+#include "driver/sdmmc_host.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_vfs_fat.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/task.h"
 #include "nvs_flash.h"
+#include "sdmmc_cmd.h"
 #include <string.h>
 
 #include "lwip/err.h"
@@ -95,6 +98,59 @@ void wifi_init_sta(void) {
   }
 }
 
+void setup_sdcard() {
+  esp_err_t ret;
+
+  esp_vfs_fat_sdmmc_mount_config_t mount_config = {
+      .format_if_mount_failed = true,
+      .max_files = 5,
+      .allocation_unit_size = 16 * 1024};
+  sdmmc_card_t *card;
+  sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+
+  sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
+
+  slot_config.width = 4;
+  slot_config.clk = 33;
+  slot_config.cmd = 47;
+  slot_config.d0 = 34;
+  slot_config.d1 = 48;
+  slot_config.d2 = 21;
+  slot_config.d3 = 26;
+  slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
+
+  ESP_LOGI(TAG, "Mounting filesystem");
+  ret = esp_vfs_fat_sdmmc_mount("/sdcard", &host, &slot_config, &mount_config,
+                                &card);
+
+  if (ret != ESP_OK) {
+    if (ret == ESP_FAIL) {
+      ESP_LOGE(TAG, "Failed to mount filesystem. "
+                    "If you want the card to be formatted, set the "
+                    "EXAMPLE_FORMAT_IF_MOUNT_FAILED menuconfig option.");
+    } else {
+      ESP_LOGE(TAG,
+               "Failed to initialize the card (%s). "
+               "Make sure SD card lines have pull-up resistors in place.",
+               esp_err_to_name(ret));
+    }
+    return;
+  }
+  ESP_LOGI(TAG, "Filesystem mounted");
+
+  // Card has been initialized, print its properties
+  sdmmc_card_print_info(stdout, card);
+
+  FILE *fp = fopen("/sdcard/index.html", "r");
+  if (fp) {
+    int ch;
+    while ((ch = fgetc(fp)) != EOF) {
+      putchar(ch);
+    }
+    fclose(fp);
+  }
+}
+
 void lcd_init();
 void fpga_init();
 void start_webserver();
@@ -128,6 +184,8 @@ void app_main(void) {
      * the wifi module. */
     esp_log_level_set("wifi", CONFIG_LOG_MAXIMUM_LEVEL);
   }
+
+  setup_sdcard();
 
   lcd_init();
   fpga_init();

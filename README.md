@@ -101,3 +101,34 @@ $ idf.py set-target esp32s3
 $ idf.py menuconfig
 $ idf.py build flash monitor
 ```
+
+## Web-based ILA
+
+The http server hosts the user interface for a small Integrated Logic Analyzer
+(ILA) with an embedded https://surfer-project.org/ waveform viewer.
+
+For various, web-technical, reasons it turned out that the most straight
+forward approach was to have the http server also host the Surfer WASM (instead
+of using the publicly hosted https://app.surfer-project.org/).
+
+### Setup
+
+First enter `idf.py menuconfig` and be sure to enable `Component config -> FAT
+Filesystem support -> Long filename support`.
+
+Then populate the SD Card with the following contents from
+`https://gitlab.com/surfer-project/surfer/-/jobs/artifacts/main/download?job=pages_build`
+```
+/media/surfer.html
+/media/dist
+/media/dist/integration.js
+/media/dist/manifest.json
+/media/dist/surfer.d.ts
+/media/dist/surfer.js
+/media/dist/surfer_bg.wasm
+/media/dist/sw.js
+```
+and from `firmware/html`
+```
+/media/index.html
+```
