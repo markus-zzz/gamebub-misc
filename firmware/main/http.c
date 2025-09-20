@@ -70,17 +70,93 @@ static const httpd_uri_t uri_ila_status = {.uri = "/ila_status",
                                            .handler = get_handler_ila_status,
                                            .user_ctx = NULL};
 
-struct ILA_Signal {
-  const char *name;
-  unsigned bits;
-} ila_signals[] = {{
-                       .name = "foo",
-                       .bits = 5,
-                   },
-                   {
-                       .name = "bar",
-                       .bits = 8,
-                   }};
+#include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+struct Signal {
+  char *name;
+  unsigned idx;
+  int bits;
+  struct Signal *next;
+};
+
+static struct Signal *ila_signals_first = NULL;
+
+// Helper to remove all whitespace from a string
+char *strip_spaces(const char *src, int len) {
+  char *clean = malloc(len + 1); // worst case: no spaces
+  if (!clean) {
+    fprintf(stderr, "Memory allocation failed\n");
+    exit(EXIT_FAILURE);
+  }
+
+  int j = 0;
+  for (int i = 0; i < len; i++) {
+    if (!isspace((unsigned char)src[i])) {
+      clean[j++] = src[i];
+    }
+  }
+  clean[j] = '\0';
+  return clean;
+}
+
+int ila_parse_signals(const char *input) {
+  int count = 0;
+
+  const char *start = strchr(input, '{');
+  const char *end = strrchr(input, '}');
+  if (!start || !end || end <= start)
+    return 0;
+
+  char buffer[256];
+  strncpy(buffer, start + 1, end - start - 1);
+  buffer[end - start - 1] = '\0';
+
+  char *token = strtok(buffer, ",");
+  while (token) {
+    while (isspace((unsigned char)*token))
+      token++;
+    struct Signal *signal = NULL;
+    char *bracket_open = strchr(token, '[');
+    char *bracket_close = strchr(token, ']');
+
+    int name_len;
+    if (bracket_open && bracket_close && bracket_close > bracket_open) {
+      signal = malloc(sizeof(struct Signal));
+      name_len = bracket_close - token + 1;
+      signal->name = strip_spaces(token, name_len);
+
+      char range[32];
+      strncpy(range, bracket_open + 1, bracket_close - bracket_open - 1);
+      range[bracket_close - bracket_open - 1] = '\0';
+
+      char *colon = strchr(range, ':');
+      if (colon) {
+        int msb = atoi(range);
+        int lsb = atoi(colon + 1);
+        signal->bits = msb - lsb + 1;
+      } else {
+        signal->bits = 1;
+      }
+    } else {
+      name_len = strlen(token);
+      while (name_len > 0 && isspace((unsigned char)token[name_len - 1])) {
+        name_len--;
+      }
+      signal->name = strip_spaces(token, name_len);
+      signal->bits = 1;
+    }
+
+    signal->idx = count++;
+    signal->next = ila_signals_first;
+    ila_signals_first = signal;
+    token = strtok(NULL, ",");
+  }
+
+  return count;
+}
 
 static esp_err_t get_handler_ila_samples(httpd_req_t *req) {
   char buf[128];
@@ -101,9 +177,10 @@ static esp_err_t get_handler_ila_samples(httpd_req_t *req) {
   int res = snprintf(buf, sizeof(buf), "$scope module ILA $end\n");
   httpd_resp_send_chunk(req, buf, res);
 
-  for (unsigned i = 0; i < sizeof(ila_signals) / sizeof(ila_signals[0]); i++) {
+  for (struct Signal *signal = ila_signals_first; signal;
+       signal = signal->next) {
     res = snprintf(buf, sizeof(buf), "$var wire %u sig%u %s $end\n",
-                   ila_signals[i].bits, i, ila_signals[i].name);
+                   signal->bits, signal->idx, signal->name);
     httpd_resp_send_chunk(req, buf, res);
   }
 
@@ -113,22 +190,21 @@ static esp_err_t get_handler_ila_samples(httpd_req_t *req) {
 
   unsigned idx = trig_idx + ila_trig_post;
   for (int si = 0; si < depth; si++) {
-    res = snprintf(buf, sizeof(buf), "#%u\n", si);
-    httpd_resp_send_chunk(req, buf, res);
+    int offset = snprintf(buf, sizeof(buf), "#%u\n", si);
 
     uint32_t sample = fpga_user_read_u32(BASE_ILA_RAM + (idx++ % depth) * 4);
-    for (unsigned i = 0; i < sizeof(ila_signals) / sizeof(ila_signals[0]);
-         i++) {
-      char *p = &buf[0];
+    for (struct Signal *signal = ila_signals_first; signal;
+         signal = signal->next) {
+      char *p = &buf[offset];
       *p++ = 'b';
-      for (unsigned j = 0; j < ila_signals[i].bits; j++) {
-        *p++ = (1 << (ila_signals[i].bits - j - 1)) & sample ? '1' : '0';
+      for (unsigned j = 0; j < signal->bits; j++) {
+        *p++ = (1 << (signal->bits - j - 1)) & sample ? '1' : '0';
       }
-      res = 1 + ila_signals[i].bits;
-      res += snprintf(p, sizeof(buf), " sig%u\n", i);
-      httpd_resp_send_chunk(req, buf, res);
-      sample >>= ila_signals[i].bits;
+      offset += 1 + signal->bits;
+      offset += snprintf(p, sizeof(buf) - offset, " sig%u\n", signal->idx);
+      sample >>= signal->bits;
     }
+    httpd_resp_send_chunk(req, buf, offset);
   }
   httpd_resp_send_chunk(req, NULL, 0);
 
@@ -165,6 +241,17 @@ void start_webserver(void) {
   // Start the httpd server
   ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
   if (httpd_start(&server, &config) == ESP_OK) {
+    {
+      FILE *fp = fopen("/sdcard/ila.sig", "w");
+      fputs("{vpos[9:0], hpos[9:0]}", fp);
+      fclose(fp);
+    }
+    char buf[256];
+    FILE *fp = fopen("/sdcard/ila.sig", "r");
+    fgets(buf, sizeof(buf), fp);
+    ila_parse_signals(buf);
+    fclose(fp);
+
     // Set URI handlers
     ESP_LOGI(TAG, "Registering URI handlers");
     httpd_register_uri_handler(server, &uri_ila_status);

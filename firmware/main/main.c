@@ -15,6 +15,8 @@
 #include "lwip/err.h"
 #include "lwip/sys.h"
 
+#include "fpga.h"
+
 /* FreeRTOS event group to signal when we are connected*/
 static EventGroupHandle_t s_wifi_event_group;
 
@@ -194,6 +196,10 @@ void app_main(void) {
   wifi_init_sta();
   printf("Hello World (markus-zzz-2)!!!\n");
   start_webserver();
+
+  const char *sdcard_fpga_bit = "/sdcard/fpga.bit";
+  ESP_LOGI(TAG, "Program FPGA from '%s'\n", sdcard_fpga_bit);
+  fpga_program_path(sdcard_fpga_bit);
 
   fpga_start_program_service();
 }

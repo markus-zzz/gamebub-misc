@@ -71,7 +71,7 @@ module top(
     .rst(rst),
     // Sampling interface
     .trigger_in((hpos == 9'd123) ? 1'b1 : 1'b0),
-    .sample_in({7'h0, vpos, 7'h0, hpos}),
+    .sample_in({vpos[9:0], hpos[9:0]}),
     // Bus interface
     .bus_addr(bus_addr),
     .bus_wen(bus_wen),

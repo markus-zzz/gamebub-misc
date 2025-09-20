@@ -57,90 +57,108 @@ static void fpga_program_task(void *arg) {
          ntohs(server_addr.sin_port));
 
   while (1) {
+    const char *sdcard_fpga_bit = "/sdcard/fpga.bit";
     // Accept
     client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
-
     printf("Client connected.\n");
-
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-    gpio_set_level(PIN_FPGA_PROGRAM_B, 0);
-    vTaskDelay(50 / portTICK_PERIOD_MS);
-
-    printf("init_b (should be 0): %d\n", gpio_get_level(PIN_FPGA_INIT_B));
-    gpio_set_level(PIN_FPGA_PROGRAM_B, 1);
-    while (gpio_get_level(PIN_FPGA_INIT_B) == 0) {
-      printf("waiting for init_b...\n");
-      vTaskDelay(50 / portTICK_PERIOD_MS);
+    FILE *fp = fopen(sdcard_fpga_bit, "wb");
+    int res;
+    while ((res = recv(client_fd, buf, BUF_SIZE, 0)) > 0) {
+      fwrite(buf, 1, res, fp);
     }
-
-    printf("FPGA is in program mode.\n");
-    // Discard header
-    int discard_bytes = 129;
-    while (discard_bytes > 0) {
-      int res = recv(client_fd, buf, discard_bytes, 0);
-      discard_bytes -= res;
-    }
-
-    printf("Programming: ");
-    spi_device_acquire_bus(fpga_spi_prog, portMAX_DELAY);
-    while (1) {
-      int res = recv(client_fd, buf, BUF_SIZE, 0);
-      if (res == 0) {
-        break;
-      }
-      spi_transaction_t txn = {};
-      txn.length = res * 8;
-      txn.tx_buffer = buf;
-      txn.flags = SPI_TRANS_CS_KEEP_ACTIVE; // Keep CS active
-      esp_err_t ret =
-          spi_device_polling_transmit(fpga_spi_prog, &txn); // Transmit!
-      assert(ret == ESP_OK);
-      printf("#");
-    }
-    printf("\n");
-    spi_device_release_bus(fpga_spi_prog);
-
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-    printf("Done pin (should be 1): %d\n", gpio_get_level(PIN_FPGA_DONE));
-
     printf("Client disconnected.\n");
     close(client_fd);
+    fclose(fp);
 
-    //
-    // Pulse core reset
-    //
-    fpga_user_write_u32(R_RESET_CTRL, 1); // reset=1
-    fpga_user_write_u32(R_RESET_CTRL, 0); // reset=0
+    fpga_program_path(sdcard_fpga_bit);
+  }
+}
 
-    //
-    // SPI testing
-    //
-    uint32_t colors[] = {0x3fUL, 0x3fUL << 6, 0x3fUL << 12};
-    unsigned idx = 0;
-    static uint32_t refs[64];
-    unsigned rounds = 0;
-    unsigned errors = 0;
-    while (1) {
-      sleep(1);
-      uint32_t border = colors[idx++ % 3];
-      fpga_user_write_u32(0xf8001010, border);
+void fpga_program_path(const char *bitpath) {
 
-      for (unsigned i = 0; i < 64; i++) {
-        uint32_t val = esp_random();
-        refs[i] = val;
-        fpga_user_write_u32(BASE_SCRATCH_RAM + i * 4, val);
-      }
-      for (unsigned i = 0; i < 64; i++) {
-        uint32_t val = fpga_user_read_u32(BASE_SCRATCH_RAM + i * 4);
-        if (refs[i] != val) {
-          printf("%u 0x%08lx != 0x%08lx\n", i, refs[i], val);
-          errors++;
-        }
-      }
-      rounds++;
-      printf("Rounds %u (errors %u)\r", rounds, errors);
-      fflush(stdout);
+  FILE *fp = fopen(bitpath, "rb");
+  if (!fp)
+    return;
+
+  vTaskDelay(100 / portTICK_PERIOD_MS);
+  gpio_set_level(PIN_FPGA_PROGRAM_B, 0);
+  vTaskDelay(50 / portTICK_PERIOD_MS);
+
+  printf("init_b (should be 0): %d\n", gpio_get_level(PIN_FPGA_INIT_B));
+  gpio_set_level(PIN_FPGA_PROGRAM_B, 1);
+  while (gpio_get_level(PIN_FPGA_INIT_B) == 0) {
+    printf("waiting for init_b...\n");
+    vTaskDelay(50 / portTICK_PERIOD_MS);
+  }
+
+  printf("FPGA is in program mode.\n");
+  // Discard header
+  int discard_bytes = 129;
+  while (discard_bytes > 0) {
+    size_t res = fread(buf, 1, discard_bytes, fp);
+    discard_bytes -= res;
+  }
+
+  printf("Programming: ");
+  spi_device_acquire_bus(fpga_spi_prog, portMAX_DELAY);
+  while (1) {
+    size_t res = fread(buf, 1, BUF_SIZE, fp);
+    if (res == 0) {
+      break;
     }
+    spi_transaction_t txn = {};
+    txn.length = res * 8;
+    txn.tx_buffer = buf;
+    txn.flags = SPI_TRANS_CS_KEEP_ACTIVE; // Keep CS active
+    esp_err_t ret =
+        spi_device_polling_transmit(fpga_spi_prog, &txn); // Transmit!
+    assert(ret == ESP_OK);
+    printf("#");
+  }
+  printf("\n");
+  spi_device_release_bus(fpga_spi_prog);
+
+  vTaskDelay(100 / portTICK_PERIOD_MS);
+  printf("Done pin (should be 1): %d\n", gpio_get_level(PIN_FPGA_DONE));
+
+  fclose(fp);
+
+  //
+  // Pulse core reset
+  //
+  fpga_user_write_u32(R_RESET_CTRL, 1); // reset=1
+  fpga_user_write_u32(R_RESET_CTRL, 0); // reset=0
+}
+
+//
+// FPGA SPI testing
+//
+void fpga_test_spi() {
+  uint32_t colors[] = {0x3fUL, 0x3fUL << 6, 0x3fUL << 12};
+  unsigned idx = 0;
+  static uint32_t refs[64];
+  unsigned rounds = 0;
+  unsigned errors = 0;
+  while (1) {
+    sleep(1);
+    uint32_t border = colors[idx++ % 3];
+    fpga_user_write_u32(0xf8001010, border);
+
+    for (unsigned i = 0; i < 64; i++) {
+      uint32_t val = esp_random();
+      refs[i] = val;
+      fpga_user_write_u32(BASE_SCRATCH_RAM + i * 4, val);
+    }
+    for (unsigned i = 0; i < 64; i++) {
+      uint32_t val = fpga_user_read_u32(BASE_SCRATCH_RAM + i * 4);
+      if (refs[i] != val) {
+        printf("%u 0x%08lx != 0x%08lx\n", i, refs[i], val);
+        errors++;
+      }
+    }
+    rounds++;
+    printf("Rounds %u (errors %u)\r", rounds, errors);
+    fflush(stdout);
   }
 }
 
