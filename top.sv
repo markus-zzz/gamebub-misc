@@ -152,6 +152,7 @@ module top(
     .bus_ren(bus_ren),
     .bus_wen(bus_wen),
     // Display signals
+    .hsync(hsync),
     .vsync(vsync),
     .disp_en(data_en),
     .ovl_out(ovl_en)
@@ -238,10 +239,18 @@ module overlay(
   input wire bus_ren,
   input wire bus_wen,
   // Display signals
+  input wire hsync,
   input wire vsync,
   input wire disp_en,
   output logic ovl_out
 );
+
+  logic hsync_prev;
+  logic hsync_fall;
+  logic hsync_rise;
+  assign hsync_fall = hsync_prev & ~hsync;
+  assign hsync_rise = ~hsync_prev & hsync;
+  always_ff @(posedge clk_50mhz) hsync_prev <= hsync;
 
   logic vsync_prev;
   logic vsync_fall;
@@ -287,10 +296,22 @@ module overlay(
     .dout(ram_do)
   );
 
+  logic htoggle;
+  always_ff @(posedge clk_50mhz) begin
+    if (hsync_fall) htoggle <= 0;
+    else if (clk_en_12_5mhz & disp_en) htoggle <= ~htoggle;
+  end
+
+  logic vtoggle;
+  always_ff @(posedge clk_50mhz) begin
+    if (vsync_fall) vtoggle <= 0;
+    else if (hsync_fall) vtoggle <= ~vtoggle;
+  end
+
   logic [4:0] pixel_idx;
   always_ff @(posedge clk_50mhz) begin
     if (vsync_fall) pixel_idx <= 0;
-    else if (clk_en_12_5mhz & disp_en) pixel_idx <= pixel_idx + 1;
+    else if (clk_en_12_5mhz & disp_en & htoggle) pixel_idx <= pixel_idx + 1;
   end
 
   logic [31:0] pixels_reg;
@@ -301,13 +322,13 @@ module overlay(
   end
 
   logic overlay_ren, overlay_ren_prev;
-  assign overlay_ren = vsync_rise || (clk_en_12_5mhz && disp_en && (pixel_idx == 30));
+  assign overlay_ren = vsync_rise || (clk_en_12_5mhz && disp_en && htoggle && (pixel_idx == 30));
   always_ff @(posedge clk_50mhz) overlay_ren_prev <= overlay_ren;
 
   always_ff @(posedge clk_50mhz) begin
     if (clk_en_12_5mhz) begin
-      if (pixel_idx == 31) pixels_reg <= ram_do_latch;
-      else if (disp_en) pixels_reg <= {1'b0, pixels_reg[31:1]};
+      if (htoggle && pixel_idx == 31) pixels_reg <= ram_do_latch;
+      else if (disp_en & htoggle) pixels_reg <= {1'b0, pixels_reg[31:1]}; // XXX: Maybe better not not shift after all
     end
   end
 
