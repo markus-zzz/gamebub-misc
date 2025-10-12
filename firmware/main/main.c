@@ -29,6 +29,8 @@ static const char *TAG = "wifi station";
 
 static int s_retry_num = 0;
 
+static esp_netif_ip_info_t ip_info;
+
 static void event_handler(void *arg, esp_event_base_t event_base,
                           int32_t event_id, void *event_data) {
   if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
@@ -46,6 +48,7 @@ static void event_handler(void *arg, esp_event_base_t event_base,
   } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
     ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
     ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
+    ip_info = event->ip_info;
     s_retry_num = 0;
     xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
   }
@@ -153,23 +156,33 @@ void setup_sdcard() {
   }
 }
 
+#define CHARSET2_OFF 2048
 extern const unsigned char font[];
 
 void ovl_char(unsigned x, unsigned y, char chr) {
-  x = 39 - x;
+  if (islower(chr))
+    chr = chr - 'a' + 1;
+  x = 19 - x;
   for (unsigned i = 0; i < 8; i++) {
-    uint32_t addr = 0xf8300000 + 40 * (i + y * 8) + (x >> 2) * 4;
+    uint32_t addr = 0xf8300000 + 20 * (i + y * 8) + (x >> 2) * 4;
     uint32_t mask = 0xffUL << (8 * (x & 3));
     uint32_t dword = fpga_user_read_u32(addr) & ~mask;
-    dword |= font[(unsigned)(chr & 0x3f) * 8 + i] << (8 * (x & 3));
+    dword |= font[CHARSET2_OFF + (unsigned)chr * 8 + i] << (8 * (x & 3));
     fpga_user_write_u32(addr, dword);
     // printf("ovl_char: addr=0x%08lx dword=0x%08lx\n", addr, dword);
   }
 }
 
-void ovl_str(unsigned x, unsigned y, const char *str) {
-  for (unsigned i = 0; str[i] != '\0'; i++) {
-    ovl_char(x + i, y, str[i]);
+void ovl_printf(unsigned x, unsigned y, const char *format, ...) {
+#define MAX_OVL_WIDTH 20
+  char buffer[MAX_OVL_WIDTH + 1];
+  va_list args;
+  va_start(args, format);
+  vsnprintf(buffer, sizeof(buffer), format, args);
+  va_end(args);
+
+  for (unsigned i = 0; buffer[i] != '\0' && i + x < MAX_OVL_WIDTH; i++) {
+    ovl_char(x + i, y, buffer[i]);
   }
 }
 
@@ -212,19 +225,32 @@ void app_main(void) {
   lcd_init();
   fpga_init();
 
-  ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
-  wifi_init_sta();
-  printf("Hello World (markus-zzz-2)!!!\n");
-  start_webserver();
-
   const char *sdcard_fpga_bit = "/sdcard/fpga.bit";
   ESP_LOGI(TAG, "Program FPGA from '%s'\n", sdcard_fpga_bit);
   fpga_program_path(sdcard_fpga_bit);
 
-  for (unsigned i = 0; i < 'Z' - 'A' + 1; i++) {
-    ovl_char(0, i, 'a' + i);
+  ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
+  wifi_init_sta();
+
+  unsigned row = 0;
+  ovl_printf(0, row++, "Connected to:");
+  ovl_printf(1, row++, "ssid: %s", CONFIG_ESP_WIFI_SSID);
+  ovl_printf(1, row++, "ip: " IPSTR, IP2STR(&ip_info.ip));
+  ovl_printf(1, row++, "nm: " IPSTR, IP2STR(&ip_info.netmask));
+  ovl_printf(1, row++, "gw: " IPSTR, IP2STR(&ip_info.gw));
+
+  // Temporary write /sdcard/ila.sig
+  // File format is LSB to MSB
+  {
+    FILE *fp = fopen("/sdcard/ila.sig", "w");
+    fputs("foo.hpos 10\n", fp);
+    fputs("vpos 10\n", fp);
+    fputs("# Ignore this comment\n", fp);
+    fputs("btn_right 1\n", fp);
+    fclose(fp);
   }
-  ovl_str(0, 30, "HELLO WORLD!");
+
+  start_webserver();
 
   fpga_start_program_service();
 }

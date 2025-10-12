@@ -315,8 +315,11 @@ int main(int argc, char **argv) {
   for (unsigned i = 0; i < 8; i++) {
     addCmd<SpiRead>(cmds, BASE_ILA_RAM + i * sizeof(uint32_t), readData);
   }
+
+  addCmd<SpiWrite>(cmds, 0xf830'0000, 0xaaaa'aaaa); // Write to overlay RAM
+#if 1
   for (unsigned i = 0; i < 32; i++) {
-    addCmd<SpiWrite>(cmds, 0xf830'0000 + 4 * 10 / 2 * i, 0x8000'0001); // Write to overlay RAM
+    addCmd<SpiWrite>(cmds, 0xf830'0000 + 4 * 10 / 2 * i, 0x8001'8001); // Write to overlay RAM
   }
   addCmd<SpiWrite>(cmds, 0xf830'0000 + 4, 0x8000'0001); // Write to overlay RAM
 #if 1
@@ -328,6 +331,7 @@ int main(int argc, char **argv) {
   for (unsigned i = 0; i < 8; i++) {
     addCmd<SpiRead>(cmds, 0xf830'0000 + 8 + 4 * 10 / 2 * (5 + i), readData);
   }
+#endif
 #endif
 
   addCmd<Wait>(cmds, 10'005'000);

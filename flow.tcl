@@ -1,12 +1,14 @@
 set outputDir ./out
 file mkdir $outputDir
 
-read_verilog -sv reg_map_pkg.sv
-read_verilog -sv top.sv
-read_verilog -sv spi_slow.sv
-read_verilog -sv ila.sv
-read_verilog spram.v
-read_xdc io.xdc
+read_verilog -sv gateware/reg_map_pkg.sv
+read_verilog -sv gateware/ila.sv
+read_verilog -sv gateware/lcd_vidgen.sv
+read_verilog -sv gateware/overlay.sv
+read_verilog -sv gateware/spi_slow.sv
+read_verilog gateware/spram.v
+read_verilog -sv gateware/top.sv
+read_xdc gateware/io.xdc
 
 synth_design -top top -part xc7a100tcsg324-2
 write_checkpoint -force $outputDir/post_synth.dcp

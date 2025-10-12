@@ -84,78 +84,36 @@ struct Signal {
 
 static struct Signal *ila_signals_first = NULL;
 
-// Helper to remove all whitespace from a string
-char *strip_spaces(const char *src, int len) {
-  char *clean = malloc(len + 1); // worst case: no spaces
-  if (!clean) {
-    fprintf(stderr, "Memory allocation failed\n");
-    exit(EXIT_FAILURE);
-  }
-
-  int j = 0;
-  for (int i = 0; i < len; i++) {
-    if (!isspace((unsigned char)src[i])) {
-      clean[j++] = src[i];
+void ila_parse_signals(const char *sig_path) {
+  // File format is MSB to LSB
+  char buf[256];
+  unsigned count = 0;
+  struct Signal **prev_sig_next = &ila_signals_first;
+  FILE *fp = fopen(sig_path, "r");
+  while (fgets(buf, sizeof(buf), fp)) {
+    if (buf[0] == '#')
+      continue; // Comment
+    const char *sig_name = strtok(buf, " \t");
+    const char *sig_width = strtok(NULL, " \t");
+    if (sig_name && sig_width) {
+      struct Signal *sig = malloc(sizeof(struct Signal));
+      sig->name = strdup(sig_name);
+      sig->bits = strtoul(sig_width, NULL, 10);
+      sig->idx = count++;
+      sig->next = NULL;
+      *prev_sig_next = sig;
+      prev_sig_next = &sig->next;
     }
   }
-  clean[j] = '\0';
-  return clean;
+  fclose(fp);
 }
 
-int ila_parse_signals(const char *input) {
-  int count = 0;
-
-  const char *start = strchr(input, '{');
-  const char *end = strrchr(input, '}');
-  if (!start || !end || end <= start)
-    return 0;
-
-  char buffer[256];
-  strncpy(buffer, start + 1, end - start - 1);
-  buffer[end - start - 1] = '\0';
-
-  char *token = strtok(buffer, ",");
-  while (token) {
-    while (isspace((unsigned char)*token))
-      token++;
-    struct Signal *signal = NULL;
-    char *bracket_open = strchr(token, '[');
-    char *bracket_close = strchr(token, ']');
-
-    int name_len;
-    if (bracket_open && bracket_close && bracket_close > bracket_open) {
-      signal = malloc(sizeof(struct Signal));
-      name_len = bracket_close - token + 1;
-      signal->name = strip_spaces(token, name_len);
-
-      char range[32];
-      strncpy(range, bracket_open + 1, bracket_close - bracket_open - 1);
-      range[bracket_close - bracket_open - 1] = '\0';
-
-      char *colon = strchr(range, ':');
-      if (colon) {
-        int msb = atoi(range);
-        int lsb = atoi(colon + 1);
-        signal->bits = msb - lsb + 1;
-      } else {
-        signal->bits = 1;
-      }
-    } else {
-      name_len = strlen(token);
-      while (name_len > 0 && isspace((unsigned char)token[name_len - 1])) {
-        name_len--;
-      }
-      signal->name = strip_spaces(token, name_len);
-      signal->bits = 1;
-    }
-
-    signal->idx = count++;
-    signal->next = ila_signals_first;
-    ila_signals_first = signal;
-    token = strtok(NULL, ",");
+void ila_dump_signals() {
+  struct Signal *sig = ila_signals_first;
+  while (sig) {
+    printf(" %u %s %u\n", sig->idx, sig->name, sig->bits);
+    sig = sig->next;
   }
-
-  return count;
 }
 
 static esp_err_t get_handler_ila_samples(httpd_req_t *req) {
@@ -241,16 +199,8 @@ void start_webserver(void) {
   // Start the httpd server
   ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
   if (httpd_start(&server, &config) == ESP_OK) {
-    {
-      FILE *fp = fopen("/sdcard/ila.sig", "w");
-      fputs("{btn_right[0:0],vpos[9:0], foo.hpos[9:0]}", fp);
-      fclose(fp);
-    }
-    char buf[256];
-    FILE *fp = fopen("/sdcard/ila.sig", "r");
-    fgets(buf, sizeof(buf), fp);
-    ila_parse_signals(buf);
-    fclose(fp);
+    ila_parse_signals("/sdcard/ila.sig");
+    ila_dump_signals();
 
     // Set URI handlers
     ESP_LOGI(TAG, "Registering URI handlers");
