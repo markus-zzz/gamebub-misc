@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "fpga.h"
+#include "miniz.h"
 
 #define PIN_FPGA_POWER 46
 #define PIN_FPGA_DONE 6
@@ -33,6 +34,63 @@ static spi_device_handle_t fpga_spi_prog = NULL;
 static spi_device_handle_t fpga_spi_user = NULL;
 
 static SemaphoreHandle_t fpga_spi_user_mutex = NULL;
+
+void extract_archive(const char *archive_filename, const char *output_dir) {
+  FILE *archive = fopen(archive_filename, "rb");
+  if (!archive) {
+    perror("Failed to open archive");
+    return;
+  }
+
+  while (1) {
+    uint8_t name_len;
+    if (fread(&name_len, sizeof(uint8_t), 1, archive) != 1)
+      break; // End of archive
+
+    char filename[256]; // max 255 + null terminator
+    if (fread(filename, 1, name_len, archive) != name_len) {
+      perror("Failed to read filename");
+      break;
+    }
+    filename[name_len] = '\0';
+
+    uint32_t filesize;
+    if (fread(&filesize, sizeof(uint32_t), 1, archive) != 1) {
+      perror("Failed to read filesize");
+      break;
+    }
+
+    char output_path[256];
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat-truncation"
+    snprintf(output_path, sizeof(output_path), "%s/%s", output_dir, filename);
+#pragma GCC diagnostic pop
+
+    FILE *out = fopen(output_path, "wb");
+    if (!out) {
+      perror("Failed to create output file");
+      fseek(archive, filesize, SEEK_CUR); // Skip file content
+      continue;
+    }
+
+    char buffer[1024];
+    uint32_t remaining = filesize;
+    while (remaining > 0) {
+      size_t chunk = remaining > sizeof(buffer) ? sizeof(buffer) : remaining;
+      if (fread(buffer, 1, chunk, archive) != chunk) {
+        perror("Failed to read file content");
+        break;
+      }
+      fwrite(buffer, 1, chunk, out);
+      remaining -= chunk;
+    }
+
+    fclose(out);
+    printf("Extracted: %s\n", output_path);
+  }
+
+  fclose(archive);
+}
 
 static void fpga_program_task(void *arg) {
   int server_fd, client_fd;
@@ -57,11 +115,10 @@ static void fpga_program_task(void *arg) {
          ntohs(server_addr.sin_port));
 
   while (1) {
-    const char *sdcard_fpga_bit = "/sdcard/fpga.bit";
     // Accept
     client_fd = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
     printf("Client connected.\n");
-    FILE *fp = fopen(sdcard_fpga_bit, "wb");
+    FILE *fp = fopen(SDCARD_FPGA_AR, "wb");
     int res;
     while ((res = recv(client_fd, buf, BUF_SIZE, 0)) > 0) {
       fwrite(buf, 1, res, fp);
@@ -70,7 +127,12 @@ static void fpga_program_task(void *arg) {
     close(client_fd);
     fclose(fp);
 
-    fpga_program_path(sdcard_fpga_bit);
+    // Extract the archive
+    extract_archive(SDCARD_FPGA_AR, "/sdcard");
+    // Re-program the FPGA
+    fpga_program_path(SDCARD_FPGA_BIT);
+    // Re-parse ILA signals
+    ila_parse_signals(SDCARD_ILA_SIG);
   }
 }
 

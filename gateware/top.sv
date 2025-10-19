@@ -86,7 +86,7 @@ module top(
     .rst(rst),
     // Sampling interface
     .trigger_in(~btn_right),
-    .sample_in({btn_right, vpos[9:0], hpos[9:0]}),
+    .sample_in({btn_right, ovl_0.hsync_shift[3:0], vpos[9:0],btn_right, hpos[9:0]}), // ILA_FIND_ME
     // Bus interface
     .bus_addr(bus_addr),
     .bus_wen(bus_wen),

@@ -145,15 +145,6 @@ void setup_sdcard() {
 
   // Card has been initialized, print its properties
   sdmmc_card_print_info(stdout, card);
-
-  FILE *fp = fopen("/sdcard/index.html", "r");
-  if (fp) {
-    int ch;
-    while ((ch = fgetc(fp)) != EOF) {
-      putchar(ch);
-    }
-    fclose(fp);
-  }
 }
 
 #define CHARSET2_OFF 2048
@@ -225,9 +216,9 @@ void app_main(void) {
   lcd_init();
   fpga_init();
 
-  const char *sdcard_fpga_bit = "/sdcard/fpga.bit";
-  ESP_LOGI(TAG, "Program FPGA from '%s'\n", sdcard_fpga_bit);
-  fpga_program_path(sdcard_fpga_bit);
+  ESP_LOGI(TAG, "Program FPGA from '%s'\n", SDCARD_FPGA_BIT);
+  fpga_program_path(SDCARD_FPGA_BIT);
+  ila_parse_signals(SDCARD_ILA_SIG);
 
   ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
   wifi_init_sta();
@@ -238,17 +229,6 @@ void app_main(void) {
   ovl_printf(1, row++, "ip: " IPSTR, IP2STR(&ip_info.ip));
   ovl_printf(1, row++, "nm: " IPSTR, IP2STR(&ip_info.netmask));
   ovl_printf(1, row++, "gw: " IPSTR, IP2STR(&ip_info.gw));
-
-  // Temporary write /sdcard/ila.sig
-  // File format is LSB to MSB
-  {
-    FILE *fp = fopen("/sdcard/ila.sig", "w");
-    fputs("foo.hpos 10\n", fp);
-    fputs("vpos 10\n", fp);
-    fputs("# Ignore this comment\n", fp);
-    fputs("btn_right 1\n", fp);
-    fclose(fp);
-  }
 
   start_webserver();
 

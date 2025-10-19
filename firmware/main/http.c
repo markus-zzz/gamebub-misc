@@ -8,7 +8,6 @@
 #include <unistd.h>
 
 #include "fpga.h"
-#include "index.html.h"
 
 static const char *TAG = "http";
 
@@ -84,7 +83,16 @@ struct Signal {
 
 static struct Signal *ila_signals_first = NULL;
 
+static void ila_dump_signals() {
+  struct Signal *sig = ila_signals_first;
+  while (sig) {
+    printf(" %u %s %u\n", sig->idx, sig->name, sig->bits);
+    sig = sig->next;
+  }
+}
+
 void ila_parse_signals(const char *sig_path) {
+  ila_signals_first = NULL;
   // File format is MSB to LSB
   char buf[256];
   unsigned count = 0;
@@ -106,14 +114,7 @@ void ila_parse_signals(const char *sig_path) {
     }
   }
   fclose(fp);
-}
-
-void ila_dump_signals() {
-  struct Signal *sig = ila_signals_first;
-  while (sig) {
-    printf(" %u %s %u\n", sig->idx, sig->name, sig->bits);
-    sig = sig->next;
-  }
+  ila_dump_signals();
 }
 
 static esp_err_t get_handler_ila_samples(httpd_req_t *req) {
@@ -193,15 +194,13 @@ static const httpd_uri_t uri_ila_arm = {.uri = "/ila_arm",
 void start_webserver(void) {
   httpd_handle_t server = NULL;
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+  // config.max_open_sockets = 4;
   config.uri_match_fn = httpd_uri_match_wildcard;
   config.lru_purge_enable = true;
 
   // Start the httpd server
   ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
   if (httpd_start(&server, &config) == ESP_OK) {
-    ila_parse_signals("/sdcard/ila.sig");
-    ila_dump_signals();
-
     // Set URI handlers
     ESP_LOGI(TAG, "Registering URI handlers");
     httpd_register_uri_handler(server, &uri_ila_status);

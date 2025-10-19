@@ -132,3 +132,6 @@ and from `firmware/html`
 ```
 /media/index.html
 ```
+
+
+https://github.com/richgel999/miniz/releases/tag/3.1.0
